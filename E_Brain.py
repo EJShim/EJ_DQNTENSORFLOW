@@ -61,10 +61,10 @@ class E_Agent():
 
 
         # Set learning parameters
-        self.exploration = "e-greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
+        self.exploration = "greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
         self.num_episodes = 200000 #Total number of episodes to train network for.
-        self.tau = 0.001 #Amount to update target network at each step.
+        self.tau = 0.1 #Amount to update target network at each step.
         self.batch_size = 32 #Size of training batch
         self.startE = 1 #Starting chance of random action
         self.endE = 0.1 #Final chance of random action
@@ -93,7 +93,7 @@ class E_Agent():
         self.sess.run(init)
 
         #Initialize TF Trainable Variables
-        self.targetGraph = self.InitTargetGraph(tf.trainable_variables(), self.tau)
+        self.targetGraph = self.InitTargetGraph(tf.trainable_variables())
         self.updateTarget()
 
 
@@ -111,7 +111,7 @@ class E_Agent():
             j = 0
             i += 1
 
-            while j < 99:
+            while j < 999:
                 j+=1
 
                 action = self.Forward(state);
@@ -119,8 +119,11 @@ class E_Agent():
                 #Get new state and reward from environment
 
                 s1, reward ,done, _ = self.env.step(action)
-                self.env.render()
-                print("episode : ", i, "state: ", state, "action : ", action, "reward : ", reward)
+
+
+                if self.epsilon < 0.3:
+                    self.env.render()
+                    print("episode : ", i, "epsilon : ", self.epsilon)
 
                 #Add Experience
                 self.buffer.add(np.reshape(np.array([state,action,reward ,s1,done]),[1,5]))
@@ -203,11 +206,11 @@ class E_Agent():
             _ = self.sess.run(self.q_net.updateModel,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.keep_per:1.0, self.q_net.actions:trainBatch[:,1]})
             self.updateTarget()
 
-    def InitTargetGraph(self, weights ,tau):
+    def InitTargetGraph(self, weights):
         total_vars = len(weights)
         op_holder = []
         for idx,var in enumerate(weights[0:total_vars//2]):
-            op_holder.append(weights[idx+total_vars//2].assign((var.value()*tau) + ((1-tau)*weights[idx+total_vars//2].value())))
+            op_holder.append(weights[idx+total_vars//2].assign((var.value()*self.tau) + ((1-self.tau)*weights[idx+total_vars//2].value())))
         return op_holder
 
     def updateTarget(self):
