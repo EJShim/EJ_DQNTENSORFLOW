@@ -57,10 +57,13 @@ class Q_Network():
 class E_Agent():
     def __init__(self):
         self.env = gym.make('CartPole-v0')
+
+
+
         # Set learning parameters
         self.exploration = "e-greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
-        self.num_episodes = 20000 #Total number of episodes to train network for.
+        self.num_episodes = 200000 #Total number of episodes to train network for.
         self.tau = 0.001 #Amount to update target network at each step.
         self.batch_size = 32 #Size of training batch
         self.startE = 1 #Starting chance of random action
@@ -68,21 +71,30 @@ class E_Agent():
         self.epsilon = self.startE
 
         self.anneling_steps = 200000 #How many steps of training to reduce startE to endE.
-        self.pre_train_steps = 50000 #Number of steps used before training updates begin.
+        self.pre_train_steps = 100 #Number of steps used before training updates begin.
         self.current_steps = 0
 
+        #Experience
+        self.buffer = experience_buffer()
+
+        #Epsilon Drop Rate
+        self.stepDrop = (self.startE - self.endE)/self.anneling_steps
+
+
+        #Initialize TF Graph
         tf.reset_default_graph()
         self.q_net = Q_Network()
         self.target_net = Q_Network()
-        self.buffer = experience_buffer()
 
 
-        #Initialize TF
+        #Initialize TF Variables
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
         self.sess.run(init)
-        trainables = tf.trainable_variables()
-        targetOps = self.updateTargetGraph(trainables, self.tau)
+
+        #Initialize TF Trainable Variables
+        self.targetGraph = self.InitTargetGraph(tf.trainable_variables(), self.tau)
+        self.updateTarget()
 
 
         #create lists to contain total rewards and steps per episode
@@ -91,17 +103,13 @@ class E_Agent():
         rList = []
         rMeans = []
 
-
-        self.updateTarget(targetOps, self.sess)
-        stepDrop = (self.startE - self.endE)/self.anneling_steps
-
-
-        for i in range(self.num_episodes):
+        i = -1
+        while 1:
             state = self.env.reset()
-
             rAll = 0
-            d = False
+            done = False
             j = 0
+            i += 1
 
             while j < 99:
                 j+=1
@@ -109,49 +117,40 @@ class E_Agent():
                 action = self.Forward(state);
 
                 #Get new state and reward from environment
-                s1, reward ,d,_ = self.env.step(action)
+
+                s1, reward ,done, _ = self.env.step(action)
+                self.env.render()
+                print("episode : ", i, "state: ", state, "action : ", action, "reward : ", reward)
 
                 #Add Experience
-                self.buffer.add(np.reshape(np.array([state,action,reward ,s1,d]),[1,5]))
-
-                if self.epsilon > self.endE and self.current_steps > self.pre_train_steps:
-                    self.epsilon -= stepDrop
-
-                if self.current_steps > self.pre_train_steps and self.current_steps % 5 == 0:
-                    #We use Double-DQN training algorithm
-                    trainBatch = self.buffer.sample(self.batch_size)
-                    Q1 = self.sess.run(self.q_net.predict,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,3]), self.q_net.keep_per:1.0})
-                    Q2 = self.sess.run(self.target_net.Q_out,feed_dict={self.target_net.inputs:np.vstack(trainBatch[:,3]), self.target_net.keep_per:1.0})
-                    end_multiplier = -(trainBatch[:,4] - 1)
-                    doubleQ = Q2[range(self.batch_size),Q1]
-                    targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
-                    _ = self.sess.run(self.q_net.updateModel,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.keep_per:1.0, self.q_net.actions:trainBatch[:,1]})
-                    self.updateTarget(targetOps,self.sess)
+                self.buffer.add(np.reshape(np.array([state,action,reward ,s1,done]),[1,5]))
+                self.Backward(reward);
 
                 rAll += reward
-                s = s1
+                state = s1
                 self.current_steps += 1
-                if d == True:
+                if done == True:
                     break
-            jList.append(j)
-            rList.append(rAll)
 
-            if i % 100 == 0 and i != 0:
-                r_mean = np.mean(rList[-100:])
-                j_mean = np.mean(jList[-100:])
-                if self.exploration == 'e-greedy':
-                    print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " epsilon: " + str(self.epsilon))
-                if self.exploration == 'boltzmann':
-                    print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " t: " + str(self.epsilon))
-                if self.exploration == 'bayesian':
-                    print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " p: " + str(self.epsilon))
-                if self.exploration == 'random' or self.exploration == 'greedy':
-                    print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps))
-                rMeans.append(r_mean)
-                jMeans.append(j_mean)
+            # jList.append(j)
+            # rList.append(rAll)
+            #
+            # if i % 100 == 0 and i != 0:
+            #     r_mean = np.mean(rList[-100:])
+            #     j_mean = np.mean(jList[-100:])
+            #     # if self.exploration == 'e-greedy':
+            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " epsilon: " + str(self.epsilon))
+            #     # if self.exploration == 'boltzmann':
+            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " t: " + str(self.epsilon))
+            #     # if self.exploration == 'bayesian':
+            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " p: " + str(self.epsilon))
+            #     # if self.exploration == 'random' or self.exploration == 'greedy':
+            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps))
+            #     rMeans.append(r_mean)
+            #     jMeans.append(j_mean)
 
         self.sess.close()
-        print("Percent of succesful episodes: " + str(sum(rList)/self.num_episodes) + "%")
+        # print("Percent of succesful episodes: " + str(sum(rList)/self.num_episodes) + "%")
 
 
         plt.plot(rMeans)
@@ -172,6 +171,7 @@ class E_Agent():
             if np.random.rand(1) < self.epsilon or self.current_steps < self.pre_train_steps:
                 action = self.env.action_space.sample()
             else:
+                print("Nework Prediction");
                 action, allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.keep_per:1.0})
                 action = action[0]
         if self.exploration == "boltzmann":
@@ -187,15 +187,29 @@ class E_Agent():
 
         return action
 
+    def Backward(self, reward):
+        #Update Network using rewards
+        if self.epsilon > self.endE and self.current_steps > self.pre_train_steps:
+            self.epsilon -= self.stepDrop
 
+        if self.current_steps > self.pre_train_steps and self.current_steps % 5 == 0:
+            #We use Double-DQN training algorithm
+            trainBatch = self.buffer.sample(self.batch_size)
+            Q1 = self.sess.run(self.q_net.predict,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,3]), self.q_net.keep_per:1.0})
+            Q2 = self.sess.run(self.target_net.Q_out,feed_dict={self.target_net.inputs:np.vstack(trainBatch[:,3]), self.target_net.keep_per:1.0})
+            end_multiplier = -(trainBatch[:,4] - 1)
+            doubleQ = Q2[range(self.batch_size),Q1]
+            targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
+            _ = self.sess.run(self.q_net.updateModel,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.keep_per:1.0, self.q_net.actions:trainBatch[:,1]})
+            self.updateTarget()
 
-    def updateTargetGraph(self, tfVars,tau):
-        total_vars = len(tfVars)
+    def InitTargetGraph(self, weights ,tau):
+        total_vars = len(weights)
         op_holder = []
-        for idx,var in enumerate(tfVars[0:total_vars//2]):
-            op_holder.append(tfVars[idx+total_vars//2].assign((var.value()*tau) + ((1-tau)*tfVars[idx+total_vars//2].value())))
+        for idx,var in enumerate(weights[0:total_vars//2]):
+            op_holder.append(weights[idx+total_vars//2].assign((var.value()*tau) + ((1-tau)*weights[idx+total_vars//2].value())))
         return op_holder
 
-    def updateTarget(self, op_holder,sess):
-        for op in op_holder:
+    def updateTarget(self):
+        for op in self.targetGraph:
             self.sess.run(op)
