@@ -33,6 +33,8 @@ class Q_Network():
         self.keep_per = tf.placeholder(shape=None,dtype=tf.float32)
 
         hidden = slim.fully_connected(self.inputs,64,activation_fn=tf.nn.tanh,biases_initializer=None)
+        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
+        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
         hidden = slim.dropout(hidden,self.keep_per)
         self.Q_out = slim.fully_connected(hidden,2,activation_fn=None,biases_initializer=None)
 
@@ -61,17 +63,17 @@ class E_Agent():
 
 
         # Set learning parameters
-        self.exploration = "greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
+        self.exploration = "bayesian" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
-        self.num_episodes = 200000 #Total number of episodes to train network for.
-        self.tau = 0.1 #Amount to update target network at each step.
+        self.num_episodes = 10000 #Total number of episodes to train network for.
+        self.tau = 0.2 #Amount to update target network at each step.
         self.batch_size = 32 #Size of training batch
         self.startE = 1 #Starting chance of random action
         self.endE = 0.1 #Final chance of random action
         self.epsilon = self.startE
 
         self.anneling_steps = 200000 #How many steps of training to reduce startE to endE.
-        self.pre_train_steps = 100 #Number of steps used before training updates begin.
+        self.pre_train_steps = 50000 #Number of steps used before training updates begin.
         self.current_steps = 0
 
         #Experience
@@ -103,13 +105,12 @@ class E_Agent():
         rList = []
         rMeans = []
 
-        i = -1
-        while 1:
+
+        for i in range(self.num_episodes):
             state = self.env.reset()
             rAll = 0
             done = False
             j = 0
-            i += 1
 
             while j < 999:
                 j+=1
@@ -121,9 +122,9 @@ class E_Agent():
                 s1, reward ,done, _ = self.env.step(action)
 
 
-                if self.epsilon < 0.3:
-                    self.env.render()
-                    print("episode : ", i, "epsilon : ", self.epsilon)
+                # if self.epsilon < 0.3:
+                #     self.env.render()
+                #     print("episode : ", i, "epsilon : ", self.epsilon)
 
                 #Add Experience
                 self.buffer.add(np.reshape(np.array([state,action,reward ,s1,done]),[1,5]))
@@ -135,22 +136,42 @@ class E_Agent():
                 if done == True:
                     break
 
-            # jList.append(j)
-            # rList.append(rAll)
-            #
-            # if i % 100 == 0 and i != 0:
-            #     r_mean = np.mean(rList[-100:])
-            #     j_mean = np.mean(jList[-100:])
-            #     # if self.exploration == 'e-greedy':
-            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " epsilon: " + str(self.epsilon))
-            #     # if self.exploration == 'boltzmann':
-            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " t: " + str(self.epsilon))
-            #     # if self.exploration == 'bayesian':
-            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " p: " + str(self.epsilon))
-            #     # if self.exploration == 'random' or self.exploration == 'greedy':
-            #     #     print("Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps))
-            #     rMeans.append(r_mean)
-            #     jMeans.append(j_mean)
+            jList.append(j)
+            rList.append(rAll)
+
+            if i % 100 == 0 and i != 0:
+                r_mean = np.mean(rList[-100:])
+                j_mean = np.mean(jList[-100:])
+                if self.exploration == 'e-greedy':
+                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " epsilon: " + str(self.epsilon))
+                if self.exploration == 'boltzmann':
+                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " t: " + str(self.epsilon))
+                if self.exploration == 'bayesian':
+                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " p: " + str(self.epsilon))
+                if self.exploration == 'random' or self.exploration == 'greedy':
+                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps))
+                rMeans.append(r_mean)
+                jMeans.append(j_mean)
+
+        #Test Rendering
+        while 1:
+            state = self.env.reset()
+            rAll = 0
+            done = False
+            j = 0
+
+            while j < 999:
+                j+=1
+
+                action = self.Forward(state);
+
+                #Get new state and reward from environment
+                s1, reward ,done, _ = self.env.step(action)
+                self.env.render()
+
+                state = s1
+
+
 
         self.sess.close()
         # print("Percent of succesful episodes: " + str(sum(rList)/self.num_episodes) + "%")
@@ -174,7 +195,6 @@ class E_Agent():
             if np.random.rand(1) < self.epsilon or self.current_steps < self.pre_train_steps:
                 action = self.env.action_space.sample()
             else:
-                print("Nework Prediction");
                 action, allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.keep_per:1.0})
                 action = action[0]
         if self.exploration == "boltzmann":

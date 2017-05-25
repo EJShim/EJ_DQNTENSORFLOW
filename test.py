@@ -43,6 +43,8 @@ class Q_Network():
         self.keep_per = tf.placeholder(shape=None,dtype=tf.float32)
 
         hidden = slim.fully_connected(self.inputs,64,activation_fn=tf.nn.tanh,biases_initializer=None)
+        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
+        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
         hidden = slim.dropout(hidden,self.keep_per)
         self.Q_out = slim.fully_connected(hidden,2,activation_fn=None,biases_initializer=None)
 
@@ -63,10 +65,10 @@ class Q_Network():
 
 
 # Set learning parameters
-exploration = "e-greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
+exploration = "bayesian" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
 y = .99 #Discount factor.
 num_episodes = 20000 #Total number of episodes to train network for.
-tau = 0.001 #Amount to update target network at each step.
+tau = 0.1 #Amount to update target network at each step.
 batch_size = 32 #Size of training batch
 startE = 1 #Starting chance of random action
 endE = 0.1 #Final chance of random action
