@@ -30,12 +30,12 @@ class Q_Network():
         #These lines establish the feed-forward part of the network used to choose actions
         self.inputs = tf.placeholder(shape=[None,4],dtype=tf.float32)
         self.Temp = tf.placeholder(shape=None,dtype=tf.float32)
-        self.keep_per = tf.placeholder(shape=None,dtype=tf.float32)
+        self.dropout = tf.placeholder(shape=None,dtype=tf.float32)
 
         hidden = slim.fully_connected(self.inputs,64,activation_fn=tf.nn.tanh,biases_initializer=None)
         hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
         hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
-        hidden = slim.dropout(hidden,self.keep_per)
+        hidden = slim.dropout(hidden,self.dropout)
         self.Q_out = slim.fully_connected(hidden,2,activation_fn=None,biases_initializer=None)
 
         self.predict = tf.argmax(self.Q_out,1)
@@ -60,8 +60,6 @@ class E_Agent():
     def __init__(self):
         self.env = gym.make('CartPole-v0')
 
-
-
         # Set learning parameters
         self.exploration = "bayesian" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
@@ -79,33 +77,40 @@ class E_Agent():
         #Experience
         self.buffer = experience_buffer()
 
-        #Epsilon Drop Rate
-        self.stepDrop = (self.startE - self.endE)/self.anneling_steps
+        #Initialize Graph
+        self.InitGraph()
 
+        #Run Training And Save Weights
+        # self.RunTraining()
+        # self.SaveWeights()
 
+        self.RestoreWeights()
+        self.Test()
+
+        self.sess.close()
+
+    def InitGraph(self):
         #Initialize TF Graph
         tf.reset_default_graph()
         self.q_net = Q_Network()
         self.target_net = Q_Network()
 
-
         #Initialize TF Variables
         init = tf.global_variables_initializer()
+
         self.sess = tf.Session()
         self.sess.run(init)
 
         #Initialize TF Trainable Variables
         self.targetGraph = self.InitTargetGraph(tf.trainable_variables())
-        self.updateTarget()
+        self.UpdateTargetGraph()
 
-
+    def RunTraining(self):
         #create lists to contain total rewards and steps per episode
-        jList = []
-        jMeans = []
         rList = []
         rMeans = []
 
-
+        #Start Training
         for i in range(self.num_episodes):
             state = self.env.reset()
             rAll = 0
@@ -118,15 +123,9 @@ class E_Agent():
                 action = self.Forward(state);
 
                 #Get new state and reward from environment
-
                 s1, reward ,done, _ = self.env.step(action)
 
-
-                # if self.epsilon < 0.3:
-                #     self.env.render()
-                #     print("episode : ", i, "epsilon : ", self.epsilon)
-
-                #Add Experience
+                #Add Experienc
                 self.buffer.add(np.reshape(np.array([state,action,reward ,s1,done]),[1,5]))
                 self.Backward(reward);
 
@@ -136,12 +135,14 @@ class E_Agent():
                 if done == True:
                     break
 
-            jList.append(j)
             rList.append(rAll)
 
             if i % 100 == 0 and i != 0:
                 r_mean = np.mean(rList[-100:])
-                j_mean = np.mean(jList[-100:])
+                if r_mean == 200.0:
+                    print("Training seems to be done")
+                    return
+
                 if self.exploration == 'e-greedy':
                     print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " epsilon: " + str(self.epsilon))
                 if self.exploration == 'boltzmann':
@@ -151,8 +152,12 @@ class E_Agent():
                 if self.exploration == 'random' or self.exploration == 'greedy':
                     print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps))
                 rMeans.append(r_mean)
-                jMeans.append(j_mean)
+        #Training Done
+        # print("Percent of succesful episodes: " + str(sum(rList)/self.num_episodes) + "%")
+        # plt.plot(rMeans)
+        # plt.show()
 
+    def Test(self):
         #Test Rendering
         while 1:
             state = self.env.reset()
@@ -160,7 +165,7 @@ class E_Agent():
             done = False
             j = 0
 
-            while j < 999:
+            while j < 199:
                 j+=1
 
                 action = self.Forward(state);
@@ -172,18 +177,10 @@ class E_Agent():
                 state = s1
 
 
-
-        self.sess.close()
-        # print("Percent of succesful episodes: " + str(sum(rList)/self.num_episodes) + "%")
-
-
-        plt.plot(rMeans)
-        plt.show()
-
     def Forward(self, state):
         if self.exploration == "greedy":
             #Choose an action with the maximum expected value.
-            action , allQ = self.sess.run([self.q_net.predict, self.q_net.Q_out],feed_dict={self.q_net.inputs:[state], self.q_net.keep_per:1.0})
+            action , allQ = self.sess.run([self.q_net.predict, self.q_net.Q_out],feed_dict={self.q_net.inputs:[state], self.q_net.dropout:1.0})
             action = action[0]
 
         if self.exploration == "random":
@@ -195,36 +192,39 @@ class E_Agent():
             if np.random.rand(1) < self.epsilon or self.current_steps < self.pre_train_steps:
                 action = self.env.action_space.sample()
             else:
-                action, allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.keep_per:1.0})
+                action, allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.dropout:1.0})
                 action = action[0]
         if self.exploration == "boltzmann":
             #Choose an action probabilistically, with weights relative to the Q-values.
-            Q_d,allQ = self.sess.run([self.q_net.Q_dist,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state], self.q_net.Temp:self.epsilon, self.q_net.keep_per:1.0})
+            Q_d,allQ = self.sess.run([self.q_net.Q_dist,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state], self.q_net.Temp:self.epsilon, self.q_net.dropout:1.0})
             action = np.random.choice(Q_d[0],p=Q_d[0])
             action = np.argmax(Q_d[0] == action)
 
         if self.exploration == "bayesian":
             #Choose an action using a sample from a dropout approximation of a bayesian q-network.
-            action,allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.keep_per:(1-self.epsilon)+0.1})
+            action,allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.dropout:(1-self.epsilon)+0.1})
             action = action[0]
 
         return action
 
     def Backward(self, reward):
+        #Epsilon Drop Rate
+        stepDrop = (self.startE - self.endE)/self.anneling_steps
+
         #Update Network using rewards
         if self.epsilon > self.endE and self.current_steps > self.pre_train_steps:
-            self.epsilon -= self.stepDrop
+            self.epsilon -= stepDrop
 
         if self.current_steps > self.pre_train_steps and self.current_steps % 5 == 0:
             #We use Double-DQN training algorithm
             trainBatch = self.buffer.sample(self.batch_size)
-            Q1 = self.sess.run(self.q_net.predict,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,3]), self.q_net.keep_per:1.0})
-            Q2 = self.sess.run(self.target_net.Q_out,feed_dict={self.target_net.inputs:np.vstack(trainBatch[:,3]), self.target_net.keep_per:1.0})
+            Q1 = self.sess.run(self.q_net.predict,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,3]), self.q_net.dropout:1.0})
+            Q2 = self.sess.run(self.target_net.Q_out,feed_dict={self.target_net.inputs:np.vstack(trainBatch[:,3]), self.target_net.dropout:1.0})
             end_multiplier = -(trainBatch[:,4] - 1)
             doubleQ = Q2[range(self.batch_size),Q1]
             targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
-            _ = self.sess.run(self.q_net.updateModel,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.keep_per:1.0, self.q_net.actions:trainBatch[:,1]})
-            self.updateTarget()
+            _ = self.sess.run(self.q_net.updateModel,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.dropout:1.0, self.q_net.actions:trainBatch[:,1]})
+            self.UpdateTargetGraph()
 
     def InitTargetGraph(self, weights):
         total_vars = len(weights)
@@ -233,6 +233,21 @@ class E_Agent():
             op_holder.append(weights[idx+total_vars//2].assign((var.value()*self.tau) + ((1-self.tau)*weights[idx+total_vars//2].value())))
         return op_holder
 
-    def updateTarget(self):
+    def UpdateTargetGraph(self):
         for op in self.targetGraph:
             self.sess.run(op)
+
+    def SaveWeights(self):
+        saver = tf.train.Saver()
+        save_path = saver.save(self.sess, "./model/DQN.ckpt")
+        print("Model Saved in File: %s" % save_path);
+
+    def RestoreWeights(self):
+        saver = tf.train.Saver()
+        saver.restore(self.sess, "./model/DQN.ckpt")
+
+        #Set Epsilon to endE
+        self.epsilon = self.endE
+        self.UpdateTargetGraph()
+
+        print("Model Restored")
