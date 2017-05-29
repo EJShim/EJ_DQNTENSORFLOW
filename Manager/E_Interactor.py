@@ -27,7 +27,7 @@ class E_InteractorStyle(vtk.vtkInteractorStyle):
 
 
     def KeyPressEvent(self, obj, event):
-        keycode = self.GetInteractor().GetKeySym()
+        keycode = self.GetInteractor().GetKeySym()        
 
 
         if keycode == 'w':
