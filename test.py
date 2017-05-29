@@ -36,9 +36,9 @@ def updateTarget(op_holder,sess):
 
 
 class Q_Network():
-    def __init__(self):
+    def __init__(self, num_inputs, num_actions):
         #These lines establish the feed-forward part of the network used to choose actions
-        self.inputs = tf.placeholder(shape=[None,4],dtype=tf.float32)
+        self.inputs = tf.placeholder(shape=[None,num_inputs],dtype=tf.float32)
         self.Temp = tf.placeholder(shape=None,dtype=tf.float32)
         self.keep_per = tf.placeholder(shape=None,dtype=tf.float32)
 
@@ -54,7 +54,7 @@ class Q_Network():
 
         #Below we obtain the loss by taking the sum of squares difference between the target and prediction Q values.
         self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
-        self.actions_onehot = tf.one_hot(self.actions,2,dtype=tf.float32)
+        self.actions_onehot = tf.one_hot(self.actions,num_actions,dtype=tf.float32)
 
         self.Q = tf.reduce_sum(tf.multiply(self.Q_out, self.actions_onehot), reduction_indices=1)
 
@@ -77,8 +77,8 @@ pre_train_steps = 50000 #Number of steps used before training updates begin.
 
 tf.reset_default_graph()
 
-q_net = Q_Network()
-target_net = Q_Network()
+q_net = Q_Network(4, 2)
+target_net = Q_Network(4, 2)
 
 init = tf.initialize_all_variables()
 trainables = tf.trainable_variables()

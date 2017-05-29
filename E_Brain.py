@@ -26,9 +26,9 @@ class experience_buffer():
 
 
 class Q_Network():
-    def __init__(self):
+    def __init__(self, num_inputs, num_actions):
         #These lines establish the feed-forward part of the network used to choose actions
-        self.inputs = tf.placeholder(shape=[None,4],dtype=tf.float32)
+        self.inputs = tf.placeholder(shape=[None,num_inputs],dtype=tf.float32)
         self.Temp = tf.placeholder(shape=None,dtype=tf.float32)
         self.dropout = tf.placeholder(shape=None,dtype=tf.float32)
 
@@ -36,7 +36,7 @@ class Q_Network():
         hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
         hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
         hidden = slim.dropout(hidden,self.dropout)
-        self.Q_out = slim.fully_connected(hidden,2,activation_fn=None,biases_initializer=None)
+        self.Q_out = slim.fully_connected(hidden,num_actions,activation_fn=None,biases_initializer=None)
 
         self.predict = tf.argmax(self.Q_out,1)
         self.Q_dist = tf.nn.softmax(self.Q_out/self.Temp)
@@ -44,7 +44,7 @@ class Q_Network():
 
         #Below we obtain the loss by taking the sum of squares difference between the target and prediction Q values.
         self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
-        self.actions_onehot = tf.one_hot(self.actions,2,dtype=tf.float32)
+        self.actions_onehot = tf.one_hot(self.actions,num_actions,dtype=tf.float32)
 
         self.Q = tf.reduce_sum(tf.multiply(self.Q_out, self.actions_onehot), reduction_indices=1)
 
@@ -57,7 +57,7 @@ class Q_Network():
 
 
 class E_Agent():
-    def __init__(self):
+    def __init__(self, num_inputs, num_actions):
         self.env = gym.make('CartPole-v0')
 
         # Set learning parameters
@@ -71,29 +71,29 @@ class E_Agent():
         self.epsilon = self.startE
 
         self.anneling_steps = 200000 #How many steps of training to reduce startE to endE.
-        self.pre_train_steps = 50000 #Number of steps used before training updates begin.
+        self.pre_train_steps = 500 #Number of steps used before training updates begin.
         self.current_steps = 0
 
         #Experience
         self.buffer = experience_buffer()
 
         #Initialize Graph
-        self.InitGraph()
+        self.InitGraph(num_inputs, num_actions)
 
         #Run Training And Save Weights
         # self.RunTraining()
         # self.SaveWeights()
 
-        self.RestoreWeights()
-        self.Test()
+        # self.RestoreWeights()
+        # self.Test()
+        #
+        # self.sess.close()
 
-        self.sess.close()
-
-    def InitGraph(self):
+    def InitGraph(self, num_inputs, num_actions):
         #Initialize TF Graph
         tf.reset_default_graph()
-        self.q_net = Q_Network()
-        self.target_net = Q_Network()
+        self.q_net = Q_Network(num_inputs, num_actions)
+        self.target_net = Q_Network(num_inputs, num_actions)
 
         #Initialize TF Variables
         init = tf.global_variables_initializer()
@@ -126,12 +126,10 @@ class E_Agent():
                 s1, reward ,done, _ = self.env.step(action)
 
                 #Add Experienc
-                self.buffer.add(np.reshape(np.array([state,action,reward ,s1,done]),[1,5]))
-                self.Backward(reward);
+                self.Backward(state,action,reward ,s1,done);
 
                 rAll += reward
                 state = s1
-                self.current_steps += 1
                 if done == True:
                     break
 
@@ -207,7 +205,8 @@ class E_Agent():
 
         return action
 
-    def Backward(self, reward):
+    def Backward(self, state, action, reward, s1, done):
+        self.buffer.add(np.reshape(np.array([state,action,reward ,s1,done]),[1,5]))
         #Epsilon Drop Rate
         stepDrop = (self.startE - self.endE)/self.anneling_steps
 
@@ -225,6 +224,8 @@ class E_Agent():
             targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
             _ = self.sess.run(self.q_net.updateModel,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.dropout:1.0, self.q_net.actions:trainBatch[:,1]})
             self.UpdateTargetGraph()
+
+        self.current_steps += 1
 
     def InitTargetGraph(self, weights):
         total_vars = len(weights)

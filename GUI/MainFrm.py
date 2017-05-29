@@ -55,10 +55,6 @@ class MainWindow(QMainWindow):
         testAction.triggered.connect(self.OnClickTest)
         toolbar.addAction(testAction)
 
-
-
-
-
     def InitCentralWidget(self):
         #Set Central Widget
         self.setCentralWidget(self.m_centralWidget)
@@ -72,10 +68,11 @@ class MainWindow(QMainWindow):
 
 
     def OnClickGroundTruth(self):
+        self.Mgr.SetGroundTruth()
         print("Ground Truth Action")
 
     def OnClickTraining(self):
-        print("Training Action")
+        self.Mgr.RunTraining()
 
     def OnClickSave(self):
         print("Save Action")
@@ -84,4 +81,4 @@ class MainWindow(QMainWindow):
         print("Restore Action")
 
     def OnClickTest(self):
-        agent = E_Agent()
+        agent = E_Agent(4, 2)
