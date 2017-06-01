@@ -9,6 +9,7 @@ from Manager.E_Registration import *
 
 
 from E_Brain import *
+# from E_TestBrain import *
 
 
 class E_Manager:
@@ -21,9 +22,10 @@ class E_Manager:
         #Camera Actor
         self.m_cameraActor = vtk.vtkActor()
 
-        self.m_agent = E_Agent(3, 6)
+        self.m_agent = E_Agent(8, 6)
 
 
+        self.m_prevErr = 0.0
 
 
 
@@ -48,10 +50,10 @@ class E_Manager:
         #Initialize Registration Manager
         #Registration Manager
         self.RegMgr = E_Registration(self)
-
-
+        self.m_bInitialized = True;
 
         self.InitDefaultObjects()
+
 
     def InitDefaultObjects(self):
 
@@ -92,7 +94,7 @@ class E_Manager:
         #Add Camera Actor
         self.m_cameraSource = vtk.vtkConeSource()
         self.m_cameraSource.SetDirection(0, 2, 0)
-        self.m_cameraSource.SetHeight(2.0)
+        self.m_cameraSource.SetHeight(1.0)
         self.m_cameraSource.SetCenter(0, -1, 0)
         self.m_cameraSource.SetResolution(4)
 
@@ -114,9 +116,17 @@ class E_Manager:
         plot.SetXValuesToValue();
 
         # self.m_renderer[0].AddActor(plot)
+        self.m_log = vtk.vtkTextActor()
+        self.m_log.SetInput("log")
+        self.m_log.SetPosition(10, 40)
+        self.m_log.GetTextProperty().SetFontSize(15)
+        self.m_log.GetTextProperty().SetColor(0.0, 1.0, 0.0)
+        self.m_renderer[0].AddActor2D(self.m_log)
 
 
         self.Redraw()
+        self.RegMgr.Add3DPoints()
+
 
     def GetCamera(self, idx):
         return self.m_renderer[idx].GetActiveCamera()
@@ -124,12 +134,13 @@ class E_Manager:
 
 
     def Redraw(self):
+
         position = self.GetCamera(0).GetPosition()
         self.m_cameraActor.SetPosition( position )
-
+        self.RegMgr.Update()
         #Initialize TF Trainable Variable
 
-        self.m_renderer[1].ResetCamera()
+
 
         for i in range(2):
             self.m_renderer[i].GetRenderWindow().Render()
@@ -137,7 +148,21 @@ class E_Manager:
 
         far =   self.GetCamera(0).GetClippingRange()[1]
         self.m_cameraSource.SetCenter(0.0, -far/2.0, 0.0)
-        self.m_cameraSource.SetHeight(far)
+        # self.m_cameraSource.SetHeight(far)
+        self.m_renderer[1].ResetCamera()
+
+
+
+        # err = self.RegMgr.GetError()
+        # if not err == None:
+        #     if err < self.m_prevErr:
+        #         print("Reward 1")
+        #     elif err > self.m_prevErr:
+        #         print("Reward -1")
+        #
+        #     self.m_prevErr = err
+
+
 
 
     def SetGroundTruth(self):
@@ -149,7 +174,6 @@ class E_Manager:
     def RunTraining(self):
 
         max_episodes = 1000
-        gt = np.array([0, 1, 0])
 
         i = 0
         while 1:
@@ -159,33 +183,43 @@ class E_Manager:
             rewards = []
             rAll = 0
 
+            state =  self.RegMgr.GetState()
+
+
             while not done:
-                state =  np.array(self.GetCamera(0).GetPosition())
-                perr = np.linalg.norm( gt - state )
 
+                perr = self.RegMgr.GetError()
                 action = self.m_agent.Forward( state )
+
+
+
+                #Forward Action
                 self.ForwardActions(action)
-
-                state1 = np.array(self.GetCamera(0).GetPosition())
-                err = np.linalg.norm( gt - state1)
-
                 self.Redraw()
 
-                #Backward
-                reward = round(perr - err + 0.5)
-                if reward == 0.0: reward = -1.0
-                d = self.IsDone()
+                #Calculate Error
+                state1 = self.RegMgr.GetState()
+                err = self.RegMgr.GetError()
+
+
+                reward = 0.0
+                if err > perr:
+                    reward = -1.0
+                elif err < perr:
+                    reward = 1.0
+
+
+
+                d = self.IsDone(err)
 
                 self.m_agent.Backward(state, action, reward, state1, d)
 
-                rAll += reward
-                rewards.append(rAll)
+                # self.m_agent.Backward(reward)
                 done = d
 
+                state = state1
 
-            print("episode ", i, "Average Rewards :", np.mean(rewards), "//steps : ", self.m_agent.current_steps, "//epsilon :", str(self.m_agent.epsilon))
-            i = i+1
-
+                self.m_log.SetInput(self.m_agent.GetLog())
 
 
 
@@ -205,13 +239,20 @@ class E_Manager:
         elif idx == 5:
             interactorStyle.CamBackward()
 
-    def IsDone(self):
+    def IsOutOfRange(self):
         position = np.array(self.GetCamera(0).GetPosition())
-        gt = np.array([0, 1, 0])
-        err = np.linalg.norm( gt - position )
         hold = position[1] * math.tan(math.radians(15)) - 0.5
 
-        if abs(position[0]) > hold or abs(position[2]) > hold or err <0.1:
+        if abs(position[0]) > hold or abs(position[2]) > hold:
+            return True
+        else:
+            return False
+
+    def IsDone(self, err):
+        position = np.array(self.GetCamera(0).GetPosition())
+        hold = position[1] * math.tan(math.radians(15)) - 0.5
+
+        if abs(position[0]) > hold or abs(position[2]) > hold or err <1.0:
             return True
         else:
             return False

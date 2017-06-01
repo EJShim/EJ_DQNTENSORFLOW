@@ -9,10 +9,8 @@ import matplotlib.pyplot as plt
 
 import tensorflow.contrib.slim as slim
 
-
-
 class experience_buffer():
-    def __init__(self, buffer_size = 10000):
+    def __init__(self, buffer_size = 30000):
         self.buffer = []
         self.buffer_size = buffer_size
 
@@ -32,9 +30,9 @@ class Q_Network():
         self.Temp = tf.placeholder(shape=None,dtype=tf.float32)
         self.dropout = tf.placeholder(shape=None,dtype=tf.float32)
 
-        hidden = slim.fully_connected(self.inputs,64,activation_fn=tf.nn.tanh,biases_initializer=None)
-        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
-        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.tanh,biases_initializer=None)
+        hidden = slim.fully_connected(self.inputs,64,activation_fn=tf.nn.relu,biases_initializer=None)
+        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.relu,biases_initializer=None)
+        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.relu,biases_initializer=None)
         hidden = slim.dropout(hidden,self.dropout)
         self.Q_out = slim.fully_connected(hidden,num_actions,activation_fn=None,biases_initializer=None)
 
@@ -49,23 +47,23 @@ class Q_Network():
         self.Q = tf.reduce_sum(tf.multiply(self.Q_out, self.actions_onehot), reduction_indices=1)
 
         self.nextQ = tf.placeholder(shape=[None],dtype=tf.float32)
-        loss = tf.reduce_sum(tf.square(self.nextQ - self.Q))
-        trainer = tf.train.GradientDescentOptimizer(learning_rate=0.0005)
-        self.updateModel = trainer.minimize(loss)
+        self.loss = tf.reduce_sum(tf.square(self.nextQ - self.Q))
+        trainer = tf.train.AdamOptimizer(learning_rate=0.0005)
+        self.updateModel = trainer.minimize(self.loss)
 
 
 
 
 class E_Agent():
     def __init__(self, num_inputs, num_actions):
-        self.env = gym.make('CartPole-v0')
+        # self.env = gym.make('CartPole-v0')
 
         # Set learning parameters
-        self.exploration = "bayesian" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
+        self.exploration = "e-greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
         self.num_episodes = 10000 #Total number of episodes to train network for.
-        self.tau = 0.2 #Amount to update target network at each step.
-        self.batch_size = 32 #Size of training batch
+        self.tau = 0.02 #Amount to update target network at each step.
+        self.batch_size = 64 #Size of training batch
         self.startE = 1 #Starting chance of random action
         self.endE = 0.1 #Final chance of random action
         self.epsilon = self.startE
@@ -76,9 +74,12 @@ class E_Agent():
 
         #Experience
         self.buffer = experience_buffer()
+        self.n_actions = num_actions
 
         #Initialize Graph
         self.InitGraph(num_inputs, num_actions)
+
+        self.loss = -1
 
         #Run Training And Save Weights
         # self.RunTraining()
@@ -88,6 +89,22 @@ class E_Agent():
         # self.Test()
         #
         # self.sess.close()
+
+    def RandomAction(self):
+        return random.randint(0, self.n_actions)
+
+
+    def InitTargetGraph(self, weights):
+        total_vars = len(weights)
+        op_holder = []
+        for idx,var in enumerate(weights[0:total_vars//2]):
+            op_holder.append( weights[idx+total_vars//2].assign((var.value()*self.tau) + ((1-self.tau)*weights[idx+total_vars//2].value())) )
+        # op_holder = weights
+        return op_holder
+
+    def UpdateTargetGraph(self):
+        for op in self.targetGraph:
+            self.sess.run(op)
 
     def InitGraph(self, num_inputs, num_actions):
         #Initialize TF Graph
@@ -105,74 +122,6 @@ class E_Agent():
         self.targetGraph = self.InitTargetGraph(tf.trainable_variables())
         self.UpdateTargetGraph()
 
-    def RunTraining(self):
-        #create lists to contain total rewards and steps per episode
-        rList = []
-        rMeans = []
-
-        #Start Training
-        for i in range(self.num_episodes):
-            state = self.env.reset()
-            rAll = 0
-            done = False
-            j = 0
-
-            while j < 999:
-                j+=1
-
-                action = self.Forward(state);
-
-                #Get new state and reward from environment
-                s1, reward ,done, _ = self.env.step(action)
-
-                #Add Experienc
-                self.Backward(state,action,reward ,s1,done);
-
-                rAll += reward
-                state = s1
-                if done == True:
-                    break
-
-            rList.append(rAll)
-
-            if i % 100 == 0 and i != 0:
-                r_mean = np.mean(rList[-100:])
-                if r_mean == 200.0:
-                    print("Training seems to be done")
-                    return
-
-                if self.exploration == 'e-greedy':
-                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " epsilon: " + str(self.epsilon))
-                if self.exploration == 'boltzmann':
-                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " t: " + str(self.epsilon))
-                if self.exploration == 'bayesian':
-                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps) + " p: " + str(self.epsilon))
-                if self.exploration == 'random' or self.exploration == 'greedy':
-                    print(i, "-->Mean Reward: " + str(r_mean) + " Steps: " + str(self.current_steps))
-                rMeans.append(r_mean)
-        #Training Done
-        # print("Percent of succesful episodes: " + str(sum(rList)/self.num_episodes) + "%")
-        # plt.plot(rMeans)
-        # plt.show()
-
-    def Test(self):
-        #Test Rendering
-        while 1:
-            state = self.env.reset()
-            rAll = 0
-            done = False
-            j = 0
-
-            while j < 199:
-                j+=1
-
-                action = self.Forward(state);
-
-                #Get new state and reward from environment
-                s1, reward ,done, _ = self.env.step(action)
-                self.env.render()
-
-                state = s1
 
 
     def Forward(self, state):
@@ -183,15 +132,18 @@ class E_Agent():
 
         if self.exploration == "random":
             #Choose an action randomly.
-            action = self.env.action_space.sample()
+            action = self.RandomAction()
 
         if self.exploration == "e-greedy":
             #Choose an action by greedily (with e chance of random action) from the Q-network
             if np.random.rand(1) < self.epsilon or self.current_steps < self.pre_train_steps:
-                action = self.env.action_space.sample()
+                # action = self.env.action_space.sample()
+                action = self.RandomAction()
             else:
                 action, allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.dropout:1.0})
                 action = action[0]
+
+
         if self.exploration == "boltzmann":
             #Choose an action probabilistically, with weights relative to the Q-values.
             Q_d,allQ = self.sess.run([self.q_net.Q_dist,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state], self.q_net.Temp:self.epsilon, self.q_net.dropout:1.0})
@@ -222,21 +174,11 @@ class E_Agent():
             end_multiplier = -(trainBatch[:,4] - 1)
             doubleQ = Q2[range(self.batch_size),Q1]
             targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
-            _ = self.sess.run(self.q_net.updateModel,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.dropout:1.0, self.q_net.actions:trainBatch[:,1]})
+            self.loss, _ = self.sess.run([self.q_net.loss, self.q_net.updateModel],feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.dropout:1.0, self.q_net.actions:trainBatch[:,1]})
             self.UpdateTargetGraph()
 
         self.current_steps += 1
 
-    def InitTargetGraph(self, weights):
-        total_vars = len(weights)
-        op_holder = []
-        for idx,var in enumerate(weights[0:total_vars//2]):
-            op_holder.append(weights[idx+total_vars//2].assign((var.value()*self.tau) + ((1-self.tau)*weights[idx+total_vars//2].value())))
-        return op_holder
-
-    def UpdateTargetGraph(self):
-        for op in self.targetGraph:
-            self.sess.run(op)
 
     def SaveWeights(self):
         saver = tf.train.Saver()
@@ -252,3 +194,6 @@ class E_Agent():
         self.UpdateTargetGraph()
 
         print("Model Restored")
+
+    def GetLog(self):
+        return "Loss : " + str(self.loss) + "    epsilon : " + str(self.epsilon)
