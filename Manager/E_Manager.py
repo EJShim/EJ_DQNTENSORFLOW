@@ -9,6 +9,7 @@ from Manager.E_Registration import *
 
 
 from E_Brain import *
+from E_PolicyGradientBrain import *
 # from E_TestBrain import *
 
 
@@ -22,7 +23,7 @@ class E_Manager:
         #Camera Actor
         self.m_cameraActor = vtk.vtkActor()
 
-        self.m_agent = E_Agent(8, 6)
+        self.m_agent = E_PolicyGradientBrain(8, 6)
 
 
         self.m_prevErr = 0.0
@@ -174,24 +175,25 @@ class E_Manager:
     def RunTraining(self):
 
         max_episodes = 1000
+        max_steps = 100
 
         i = 0
         while 1:
             self.GoToRandom()
+            self.m_agent.Reset()
             done = False
 
             rewards = []
+            transitions = []
             rAll = 0
 
             state =  self.RegMgr.GetState()
 
 
-            while not done:
+            for i in range(max_steps):
 
                 perr = self.RegMgr.GetError()
                 action = self.m_agent.Forward( state )
-
-
 
                 #Forward Action
                 self.ForwardActions(action)
@@ -208,18 +210,16 @@ class E_Manager:
                 elif err < perr:
                     reward = 1.0
 
+                transitions.append((state, action, reward))
 
-
-                d = self.IsDone(err)
-
-                self.m_agent.Backward(state, action, reward, state1, d)
-
+                # self.m_agent.Backward(state, action, reward, state1, d)
                 # self.m_agent.Backward(reward)
-                done = d
-
+                done = self.IsDone(err)
                 state = state1
 
-                self.m_log.SetInput(self.m_agent.GetLog())
+                # self.m_log.SetInput(self.m_agent.GetLog())
+
+            self.m_agent.Backward(transitions)
 
 
 
