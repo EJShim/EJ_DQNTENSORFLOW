@@ -40,15 +40,10 @@ class Q_Network():
         self.Q_dist = tf.nn.softmax(self.Q_out/self.Temp)
 
 
-        #Below we obtain the loss by taking the sum of squares difference between the target and prediction Q values.
-        self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
-        self.actions_onehot = tf.one_hot(self.actions,num_actions,dtype=tf.float32)
-
-        self.Q = tf.reduce_sum(tf.multiply(self.Q_out, self.actions_onehot), reduction_indices=1)
-
-        self.nextQ = tf.placeholder(shape=[None],dtype=tf.float32)
-        self.loss = tf.reduce_sum(tf.square(self.nextQ - self.Q))
-        trainer = tf.train.AdamOptimizer(learning_rate=0.0005)
+        self.nextQ = tf.placeholder(shape=[None, num_actions],dtype=tf.float32)
+        self.loss = tf.losses.mean_squared_error(self.nextQ, self.Q_out)
+        # self.loss = tf.reduce_sum(tf.square(self.nextQ - self.predict))
+        trainer = tf.train.AdamOptimizer(learning_rate=0.005)
         self.updateModel = trainer.minimize(self.loss)
 
 
@@ -58,12 +53,13 @@ class E_Agent():
     def __init__(self, num_inputs, num_actions):
         # self.env = gym.make('CartPole-v0')
 
+        self.num_actions = num_actions
         # Set learning parameters
         self.exploration = "e-greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
         self.num_episodes = 10000 #Total number of episodes to train network for.
-        self.tau = 0.02 #Amount to update target network at each step.
-        self.batch_size = 64 #Size of training batch
+        self.tau = 1.0 #Amount to update target network at each step.
+        self.batch_size = 10 #Size of training batch
         self.startE = 1 #Starting chance of random action
         self.endE = 0.1 #Final chance of random action
         self.epsilon = self.startE
@@ -79,7 +75,7 @@ class E_Agent():
         #Initialize Graph
         self.InitGraph(num_inputs, num_actions)
 
-        self.loss = -1
+        self.loss = []
 
         #Run Training And Save Weights
         # self.RunTraining()
@@ -171,11 +167,22 @@ class E_Agent():
             trainBatch = self.buffer.sample(self.batch_size)
             Q1 = self.sess.run(self.q_net.predict,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,3]), self.q_net.dropout:1.0})
             Q2 = self.sess.run(self.target_net.Q_out,feed_dict={self.target_net.inputs:np.vstack(trainBatch[:,3]), self.target_net.dropout:1.0})
+
+            
+
             end_multiplier = -(trainBatch[:,4] - 1)
             doubleQ = Q2[range(self.batch_size),Q1]
-            targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
-            self.loss, _ = self.sess.run([self.q_net.loss, self.q_net.updateModel],feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.dropout:1.0, self.q_net.actions:trainBatch[:,1]})
+            Q2[:,action] = trainBatch[:,2] + (self.disFact * doubleQ * end_multiplier)
+            loss, _ = self.sess.run([self.q_net.loss, self.q_net.updateModel],feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:Q2, self.q_net.dropout:1.0})
             self.UpdateTargetGraph()
+
+            self.loss.append(loss)
+            if len(self.loss) > 150:
+                self.loss.pop(0)
+
+            plt.clf()
+            plt.plot(self.loss, 'r-')
+            plt.pause(1e-45)
 
         self.current_steps += 1
 
