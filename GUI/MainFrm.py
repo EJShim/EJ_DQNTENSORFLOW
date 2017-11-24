@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         print("Save Action")
 
     def OnClickRestore(self):
-        print("Restore Action")
+        self.Mgr.m_agent.RestoreWeights()
 
     def OnClickTest(self):
-        agent = E_Agent(4, 2)
+        self.Mgr.RunTest()

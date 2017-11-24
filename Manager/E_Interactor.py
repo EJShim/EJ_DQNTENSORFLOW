@@ -8,7 +8,7 @@ class E_InteractorStyle(vtk.vtkInteractorStyle):
 
         self.m_bKeyDown = False
 
-        self.m_TransFactor = 0.02
+        self.m_TransFactor = 0.01
 
         self.AddObserver("MouseMoveEvent", self.MouseMoveEvent)
         self.AddObserver("RightButtonPressEvent", self.RightButtonPressEvent)

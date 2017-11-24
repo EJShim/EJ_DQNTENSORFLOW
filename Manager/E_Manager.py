@@ -158,6 +158,25 @@ class E_Manager:
 
         self.Redraw()
 
+    def RunTest(self):
+        for i in range(10):
+            self.GoToRandom()            
+            done = False            
+            state =  self.RegMgr.GetState()
+
+            while not done:
+                action = self.m_agent.Predict( state )
+                self.ForwardActions(action)
+                self.Redraw()
+
+                #Calculate Error
+                state1 = self.RegMgr.GetState()
+                err = self.RegMgr.GetError()
+                done, _ =  self.IsDone(err)
+                state = state1
+
+
+
     def RunTraining(self):
 
         max_episodes = 1000
@@ -166,15 +185,8 @@ class E_Manager:
         i = 0
         while 1:
             self.GoToRandom()            
-            done = False
-
-            rewards = []
-            transitions = []
-            rAll = 0
-
+            done = False            
             state =  self.RegMgr.GetState()
-
-
             while 1:
 
                 perr = self.RegMgr.GetError()
@@ -195,14 +207,12 @@ class E_Manager:
                 elif err < perr:
                     reward = 1.0
 
-                done =  self.IsDone(err)
-                
-                if done:
-                    reward *= 100
+                done, reward_multiplier =  self.IsDone(err)
+                reward *= reward_multiplier
+                if done:                    
                     print("done", reward)
+                    self.m_agent.SaveWeights()
                     break
-
-                done = True
                 
 
                 self.m_agent.Backward(state, action, reward, state1, done)                
@@ -240,10 +250,12 @@ class E_Manager:
         position = np.array(self.GetCamera(0).GetPosition())
         hold = position[1] * math.tan(math.radians(15)) - 0.5
 
-        if abs(position[0]) > hold or abs(position[2]) > hold or err < 1.0:
-            return True
+        if abs(position[0]) > hold or abs(position[2]) > hold:
+            return True, -100.0
+        elif err < 2.0:
+            return True, 100.0
         else:
-            return False
+            return False, 1.0
 
     def GoToRandom(self):
         y = random.randrange(50, 100)

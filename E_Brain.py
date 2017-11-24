@@ -63,13 +63,13 @@ class E_Agent():
         self.exploration = "e-greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
         self.num_episodes = 10000 #Total number of episodes to train network for.
-        self.tau = 0.2 #Amount to update target network at each step.
+        self.tau = 0.5 #Amount to update target network at each step.
         self.batch_size = 64 #Size of training batch
         self.startE = 1 #Starting chance of random action
         self.endE = 0.1 #Final chance of random action
         self.epsilon = self.startE
 
-        self.anneling_steps = 200000 #How many steps of training to reduce startE to endE.
+        self.anneling_steps = 100000 #How many steps of training to reduce startE to endE.
         self.pre_train_steps = 500 #Number of steps used before training updates begin.
         self.current_steps = 0
 
@@ -123,6 +123,10 @@ class E_Agent():
         self.targetGraph = self.InitTargetGraph(tf.trainable_variables())
         self.UpdateTargetGraph()
 
+    def Predict(self, state):
+        action, allQ = self.sess.run([self.q_net.predict,self.q_net.Q_out],feed_dict={self.q_net.inputs:[state],self.q_net.dropout:1.0})
+        
+        return action[0]
 
 
     def Forward(self, state):
@@ -172,9 +176,7 @@ class E_Agent():
             trainBatch = self.buffer.sample(self.batch_size)
             Q1 = self.sess.run(self.q_net.predict,feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,3]), self.q_net.dropout:1.0})
             Q2 = self.sess.run(self.target_net.Q_out,feed_dict={self.target_net.inputs:np.vstack(trainBatch[:,3]), self.target_net.dropout:1.0})
-
-            
-
+        
             end_multiplier = -(trainBatch[:,4] - 1)
             doubleQ = Q2[range(self.batch_size),Q1]
             targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
@@ -200,11 +202,7 @@ class E_Agent():
 
     def RestoreWeights(self):
         saver = tf.train.Saver()
-        saver.restore(self.sess, "./model/DQN.ckpt")
-
-        #Set Epsilon to endE
-        self.epsilon = self.endE
-        self.UpdateTargetGraph()
+        saver.restore(self.sess, "./model/DQN_trained.ckpt")
 
         print("Model Restored")
 
