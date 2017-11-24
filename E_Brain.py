@@ -30,21 +30,26 @@ class Q_Network():
         self.Temp = tf.placeholder(shape=None,dtype=tf.float32)
         self.dropout = tf.placeholder(shape=None,dtype=tf.float32)
 
-        hidden = slim.fully_connected(self.inputs,64,activation_fn=tf.nn.relu,biases_initializer=None)
-        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.relu,biases_initializer=None)
-        hidden = slim.fully_connected(hidden,64,activation_fn=tf.nn.relu,biases_initializer=None)
-        hidden = slim.dropout(hidden,self.dropout)
-        self.Q_out = slim.fully_connected(hidden,num_actions,activation_fn=None,biases_initializer=None)
+        hidden1 = tf.layers.dense(inputs=self.inputs, units=64, activation=tf.nn.relu)
+        hidden2 = tf.layers.dense(inputs=hidden1, units=64, activation=tf.nn.relu)
+        hidden3 = tf.layers.dropout(inputs=hidden2, rate=self.dropout)                
+        self.Q_out = tf.layers.dense(inputs=hidden3, units=num_actions)
 
         self.predict = tf.argmax(self.Q_out,1)
         self.Q_dist = tf.nn.softmax(self.Q_out/self.Temp)
 
+        self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
+        self.actions_onehot = tf.one_hot(self.actions,num_actions,dtype=tf.float32)
 
-        self.nextQ = tf.placeholder(shape=[None, num_actions],dtype=tf.float32)
-        self.loss = tf.losses.mean_squared_error(self.nextQ, self.Q_out)
-        # self.loss = tf.reduce_sum(tf.square(self.nextQ - self.predict))
-        trainer = tf.train.AdamOptimizer(learning_rate=0.005)
-        self.updateModel = trainer.minimize(self.loss)
+        self.Q = tf.reduce_sum(tf.multiply(self.Q_out, self.actions_onehot), reduction_indices=1)
+
+        self.nextQ = tf.placeholder(shape=[None],dtype=tf.float32)
+        self.loss_op = tf.reduce_sum(tf.square(self.nextQ - self.Q))
+        regularizer = tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'bias' not in v.name])#
+        loss = self.loss_op + 0.01*regularizer
+        trainer = tf.train.AdamOptimizer(learning_rate=0.001)
+        self.updateModel = trainer.minimize(loss)
+
 
 
 
@@ -58,8 +63,8 @@ class E_Agent():
         self.exploration = "e-greedy" #Exploration method. Choose between: greedy, random, e-greedy, boltzmann, bayesian.
         self.disFact = .99 #Discount factor.
         self.num_episodes = 10000 #Total number of episodes to train network for.
-        self.tau = 1.0 #Amount to update target network at each step.
-        self.batch_size = 10 #Size of training batch
+        self.tau = 0.2 #Amount to update target network at each step.
+        self.batch_size = 64 #Size of training batch
         self.startE = 1 #Starting chance of random action
         self.endE = 0.1 #Final chance of random action
         self.epsilon = self.startE
@@ -172,8 +177,9 @@ class E_Agent():
 
             end_multiplier = -(trainBatch[:,4] - 1)
             doubleQ = Q2[range(self.batch_size),Q1]
-            Q2[:,action] = trainBatch[:,2] + (self.disFact * doubleQ * end_multiplier)
-            loss, _ = self.sess.run([self.q_net.loss, self.q_net.updateModel],feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:Q2, self.q_net.dropout:1.0})
+            targetQ = trainBatch[:,2] + (self.disFact*doubleQ * end_multiplier)
+            loss, _ = self.sess.run([self.q_net.loss_op, self.q_net.updateModel],feed_dict={self.q_net.inputs:np.vstack(trainBatch[:,0]), self.q_net.nextQ:targetQ, self.q_net.dropout:1.0, self.q_net.actions:trainBatch[:,1]})
+            
             self.UpdateTargetGraph()
 
             self.loss.append(loss)

@@ -152,19 +152,6 @@ class E_Manager:
         self.m_renderer[1].ResetCamera()
 
 
-
-        # err = self.RegMgr.GetError()
-        # if not err == None:
-        #     if err < self.m_prevErr:
-        #         print("Reward 1")
-        #     elif err > self.m_prevErr:
-        #         print("Reward -1")
-        #
-        #     self.m_prevErr = err
-
-
-
-
     def SetGroundTruth(self):
 
         self.GetCamera(0).DeepCopy(self.RegMgr.m_gCamera)
@@ -212,6 +199,8 @@ class E_Manager:
                 
                 if done:
                     reward *= 100
+                    print("done", reward)
+                    break
 
                 done = True
                 
@@ -265,3 +254,6 @@ class E_Manager:
 
         self.GetCamera(0).SetPosition(x/10, y/10, z/10)
         self.GetCamera(0).SetFocalPoint(x/10, 0, z/10)
+
+    def SaveBrain(self):
+        self.m_agent.SaveWeights()
