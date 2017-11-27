@@ -31,6 +31,11 @@ class MainWindow(QMainWindow):
         self.Mgr.Initialize()
 
 
+        #Trainer Thread
+        self.train_timer = QTimer(self)
+        self.train_timer.timeout.connect(self.Mgr.Update_thread_training)
+
+
     def InitToolbar(self):
         toolbar = QToolBar()
         self.addToolBar(toolbar)
@@ -40,6 +45,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(truthAction)
 
         trainAction = QAction("Train", self)
+        trainAction.setCheckable(True)
         trainAction.triggered.connect(self.OnClickTraining)
         toolbar.addAction(trainAction)
 
@@ -71,8 +77,13 @@ class MainWindow(QMainWindow):
         self.Mgr.SetGroundTruth()
         print("Ground Truth Action")
 
-    def OnClickTraining(self):
-        self.Mgr.RunTraining()
+    def OnClickTraining(self, run):
+        
+        if run:
+            self.Mgr.Start_thread_training()
+            self.train_timer.start()
+        else:
+            self.train_timer.stop()        
 
     def OnClickSave(self):
         print("Save Action")

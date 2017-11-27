@@ -1,6 +1,4 @@
 from __future__ import division
-
-import gym
 import numpy as np
 import random
 import tensorflow as tf
@@ -55,8 +53,7 @@ class Q_Network():
 
 
 class E_Agent():
-    def __init__(self, num_inputs, num_actions):
-        # self.env = gym.make('CartPole-v0')
+    def __init__(self, num_inputs, num_actions):        
 
         self.num_actions = num_actions
         # Set learning parameters

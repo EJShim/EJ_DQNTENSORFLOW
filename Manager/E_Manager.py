@@ -8,6 +8,8 @@ from Manager.E_Interactor import *
 from Manager.E_Registration import *
 
 
+
+
 from E_Brain import *
 # from E_TestBrain import *
 
@@ -50,7 +52,7 @@ class E_Manager:
         #Initialize Registration Manager
         #Registration Manager
         self.RegMgr = E_Registration(self)
-        self.m_bInitialized = True;
+        self.m_bInitialized = True;        
 
         self.InitDefaultObjects()
 
@@ -172,8 +174,54 @@ class E_Manager:
                 #Calculate Error
                 state1 = self.RegMgr.GetState()
                 err = self.RegMgr.GetError()
-                done, _ =  self.IsDone(err)
+                done =  self.IsDone(err)
+                out = self.IsOut()
+                if done or out:
+                    break
+
                 state = state1
+
+    def Start_thread_training(self):
+        self.GoToRandom()
+        self.Redraw()
+
+    def Update_thread_training(self):
+        state = self.RegMgr.GetState()
+        perr = self.RegMgr.GetError()
+        action = self.m_agent.Forward( state )
+
+        #Forward Action
+        self.ForwardActions(action)
+        self.Redraw()
+
+        #Calculate Error
+        state1 = self.RegMgr.GetState()
+        err = self.RegMgr.GetError()
+
+
+        reward = 0.0
+        if err > perr:
+            reward = -1.0
+        elif err < perr:
+            reward = 1.0
+
+        done =  self.IsDone(err)
+        out = self.IsOut()
+
+        if done:
+            reward = 1000.0   
+            print("done", reward)
+            self.m_agent.SaveWeights()
+            self.GoToRandom()
+        
+        if out:
+            if reward == -1.0:
+                reward = -100
+            done = True
+            print("out")
+
+        self.m_agent.Backward(state, action, reward, state1, done)        
+
 
 
 
@@ -184,7 +232,7 @@ class E_Manager:
 
         i = 0
         while 1:
-            self.GoToRandom()            
+            self.GoToRandom()          
             done = False            
             state =  self.RegMgr.GetState()
             while 1:
@@ -245,17 +293,18 @@ class E_Manager:
             return True
         else:
             return False
-
-    def IsDone(self, err):
+    def IsOut(self):
         position = np.array(self.GetCamera(0).GetPosition())
         hold = position[1] * math.tan(math.radians(15)) - 0.5
 
         if abs(position[0]) > hold or abs(position[2]) > hold:
-            return True, -100.0
-        elif err < 2.0:
-            return True, 100.0
+            return True
+
+    def IsDone(self, err):
+        if err < 2.0:
+            return True
         else:
-            return False, 1.0
+            return False
 
     def GoToRandom(self):
         y = random.randrange(50, 100)
